@@ -30,7 +30,7 @@ To try more settings and meshes adjust the config settings in as shown in the ``
 
 This work is licensed under a Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License.
 
-[<img src="doc/badges/badge-license.svg" height="32"/>](http://creativecommons.org/licenses/by-nc-sa/4.0/)
+[<img src="docs/badges/badge-license.svg" height="32"/>](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
 
  
