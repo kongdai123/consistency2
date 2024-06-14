@@ -1,0 +1,7 @@
+{
+    "prompt": "brown horse",
+    "obj": "./assets/meshes/horse.obj",
+    "save_dir": "./output/horse",
+    "seed_latents": 2024,
+    "generate_uvs": true
+}

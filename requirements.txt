@@ -1,0 +1,11 @@
+diffusers==0.28.2
+transformers==4.41.2
+accelerate==0.31.0
+matplotlib==3.9.0
+commentjson==0.9.0
+scikit-image==0.19.2
+Pillow==9.4.0
+xatlas==0.0.9
+Ninja==1.11.1.1
+imageio==2.34.1
+imageio-ffmpeg==0.4.8

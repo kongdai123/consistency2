@@ -1,0 +1,309 @@
+diff --git a/nvdiffrast/common/texture.cu b/nvdiffrast/common/texture.cu
+index 490b8d6..bbe02ed 100644
+--- a/nvdiffrast/common/texture.cu
++++ b/nvdiffrast/common/texture.cu
+@@ -23,6 +23,10 @@ static __device__ __forceinline__ bool isfinite_vec4(const float4& a) { return i
+ template<class T> static __device__ __forceinline__ T lerp  (const T& a, const T& b, float c) { return a + c * (b - a); }
+ template<class T> static __device__ __forceinline__ T bilerp(const T& a, const T& b, const T& c, const T& d, const float2& e) { return lerp(lerp(a, b, e.x), lerp(c, d, e.x), e.y); }
+ 
++
++template<class T> static __device__ __forceinline__ T gplerp  (const T& a, const T& b, float c) { return sqrt(1.f - c) * a + sqrt(c) * b; }
++template<class T> static __device__ __forceinline__ T gpbilerp(const T& a, const T& b, const T& c, const T& d, const float2& e) { return gplerp(gplerp(a, b, e.x), gplerp(c, d, e.x), e.y); }
++
+ //------------------------------------------------------------------------
+ // Cube map wrapping for smooth filtering across edges and corners. At corners,
+ // one of the texture coordinates will be negative. For correct interpolation,
+@@ -478,7 +482,7 @@ template <bool CUBE_MODE, bool BIAS_ONLY, int FILTER_MODE>
+ static __device__ __forceinline__ void calculateMipLevel(int& level0, int& level1, float& flevel, const TextureKernelParams& p, int pidx, float3 uv, float4* pdw, float3* pdfdv)
+ {
+     // Do nothing if mips not in use.
+-    if (FILTER_MODE == TEX_MODE_NEAREST || FILTER_MODE == TEX_MODE_LINEAR)
++    if (FILTER_MODE == TEX_MODE_NEAREST || FILTER_MODE == TEX_MODE_LINEAR || FILTER_MODE == TEX_MODE_LINEAR_GP)
+         return;
+ 
+     // Determine mip level based on UV pixel derivatives. If no derivatives are given (mip level bias only), leave as zero.
+@@ -770,6 +774,18 @@ static __forceinline__ __device__ void TextureFwdKernelTemplate(const TextureKer
+         return; // Exit.
+     }
+ 
++    if (FILTER_MODE == TEX_MODE_LINEAR_GP)
++    {
++        // Interpolate.
++        for (int i=0; i < p.channels; i += C, tc0 += C)
++        {
++            T a00, a10, a01, a11;
++            fetchQuad<T>(a00, a10, a01, a11, pIn0, tc0, corner0);
++            *((T*)&pOut[i]) = gpbilerp(a00, a10, a01, a11, uv0);
++        }
++        return; // Exit.
++    }
++
+     // Get texel indices and pointer for level 1.
+     int4 tc1 = make_int4(0, 0, 0, 0);
+     float2 uv1 = indexTextureLinear<CUBE_MODE>(p, uv, tz, tc1, level1);
+@@ -806,6 +822,9 @@ __global__ void TextureFwdKernelNearest4                    (const TextureKernel
+ __global__ void TextureFwdKernelLinear1                     (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, false, false, TEX_MODE_LINEAR>(p); }
+ __global__ void TextureFwdKernelLinear2                     (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, false, false, TEX_MODE_LINEAR>(p); }
+ __global__ void TextureFwdKernelLinear4                     (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, false, false, TEX_MODE_LINEAR>(p); }
++__global__ void TextureFwdKernelLinearGP1                   (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, false, false, TEX_MODE_LINEAR_GP>(p); }
++__global__ void TextureFwdKernelLinearGP2                   (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, false, false, TEX_MODE_LINEAR_GP>(p); }
++__global__ void TextureFwdKernelLinearGP4                   (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, false, false, TEX_MODE_LINEAR_GP>(p); }
+ __global__ void TextureFwdKernelLinearMipmapNearest1        (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, false, false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureFwdKernelLinearMipmapNearest2        (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, false, false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureFwdKernelLinearMipmapNearest4        (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, false, false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+@@ -818,6 +837,9 @@ __global__ void TextureFwdKernelCubeNearest4                (const TextureKernel
+ __global__ void TextureFwdKernelCubeLinear1                 (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, true,  false, TEX_MODE_LINEAR>(p); }
+ __global__ void TextureFwdKernelCubeLinear2                 (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, true,  false, TEX_MODE_LINEAR>(p); }
+ __global__ void TextureFwdKernelCubeLinear4                 (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, true,  false, TEX_MODE_LINEAR>(p); }
++__global__ void TextureFwdKernelCubeLinearGP1               (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, true, false, TEX_MODE_LINEAR_GP>(p); }
++__global__ void TextureFwdKernelCubeLinearGP2               (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, true, false, TEX_MODE_LINEAR_GP>(p); }
++__global__ void TextureFwdKernelCubeLinearGP4               (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, true, false, TEX_MODE_LINEAR_GP>(p); }
+ __global__ void TextureFwdKernelCubeLinearMipmapNearest1    (const TextureKernelParams p) { TextureFwdKernelTemplate<float,  1, true,  false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureFwdKernelCubeLinearMipmapNearest2    (const TextureKernelParams p) { TextureFwdKernelTemplate<float2, 2, true,  false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureFwdKernelCubeLinearMipmapNearest4    (const TextureKernelParams p) { TextureFwdKernelTemplate<float4, 4, true,  false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+@@ -1021,13 +1043,23 @@ static __forceinline__ __device__ void TextureGradKernelTemplate(const TextureKe
+     float uv000 = 1.f - uv0.x - uv001;
+     float4 tw0 = make_float4(uv000, uv010, uv001, uv011);
+ 
++    // Texel weights.
++    if (FILTER_MODE == TEX_MODE_LINEAR_GP)
++    {
++        uv011 = sqrt(uv0.x * uv0.y);
++        uv010 = sqrt(uv0.x * (1.f - uv0.y));
++        uv001 = sqrt(uv0.y * (1.f - uv0.x));
++        uv000 = sqrt((1.f - uv0.x) * (1.f - uv0.y));
++        tw0 = make_float4(uv000, uv010, uv001, uv011);
++    }
++
+     // Attribute weights.
+     int2 sz0 = mipLevelSize(p, level0);
+     float sclu0 = (float)sz0.x;
+     float sclv0 = (float)sz0.y;
+ 
+     // Bilinear mode - texture and uv gradients.
+-    if (FILTER_MODE == TEX_MODE_LINEAR || FILTER_MODE == TEX_MODE_LINEAR_MIPMAP_NEAREST)
++    if (FILTER_MODE == TEX_MODE_LINEAR || FILTER_MODE == TEX_MODE_LINEAR_MIPMAP_NEAREST || FILTER_MODE == TEX_MODE_LINEAR_GP)
+     {
+         for (int i=0; i < p.channels; i++, tc0 += 1)
+         {
+@@ -1068,6 +1100,19 @@ static __forceinline__ __device__ void TextureGradKernelTemplate(const TextureKe
+     float uv100 = 1.f - uv1.x - uv101;
+     float4 tw1 = make_float4(uv100, uv110, uv101, uv111);
+ 
++    // Texel weights.
++    uv011 = uv0.x * uv0.y;
++    uv010 = uv0.x - uv011;
++    uv001 = uv0.y - uv011;
++    uv000 = 1.f - uv0.x - uv001;
++    tw0 = make_float4(uv000, uv010, uv001, uv011);
++
++    // uv111 = sqrt(uv1.x * uv1.y);
++    // uv110 = sqrt(uv1.x * (1.f - uv1.y));
++    // uv101 = sqrt(uv1.y * (1.f - uv1.x));
++    // uv100 = sqrt((1.f - uv1.x) * (1.f - uv1.y));
++    // tw1 = make_float4(uv100, uv110, uv101, uv111);
++
+     // Attribute weights.
+     int2 sz1 = mipLevelSize(p, level1);
+     float sclu1 = (float)sz1.x;
+@@ -1142,10 +1187,12 @@ static __forceinline__ __device__ void TextureGradKernelTemplate(const TextureKe
+ // Template specializations.
+ __global__ void TextureGradKernelNearest                    (const TextureKernelParams p) { TextureGradKernelTemplate<false, false, TEX_MODE_NEAREST>(p); }
+ __global__ void TextureGradKernelLinear                     (const TextureKernelParams p) { TextureGradKernelTemplate<false, false, TEX_MODE_LINEAR>(p); }
++__global__ void TextureGradKernelLinearGP                   (const TextureKernelParams p) { TextureGradKernelTemplate<false, false, TEX_MODE_LINEAR_GP>(p); }
+ __global__ void TextureGradKernelLinearMipmapNearest        (const TextureKernelParams p) { TextureGradKernelTemplate<false, false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureGradKernelLinearMipmapLinear         (const TextureKernelParams p) { TextureGradKernelTemplate<false, false, TEX_MODE_LINEAR_MIPMAP_LINEAR>(p); }
+ __global__ void TextureGradKernelCubeNearest                (const TextureKernelParams p) { TextureGradKernelTemplate<true,  false, TEX_MODE_NEAREST>(p); }
+ __global__ void TextureGradKernelCubeLinear                 (const TextureKernelParams p) { TextureGradKernelTemplate<true,  false, TEX_MODE_LINEAR>(p); }
++__global__ void TextureGradKernelCubeLinearGP               (const TextureKernelParams p) { TextureGradKernelTemplate<true, false, TEX_MODE_LINEAR_GP>(p); }
+ __global__ void TextureGradKernelCubeLinearMipmapNearest    (const TextureKernelParams p) { TextureGradKernelTemplate<true,  false, TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+ __global__ void TextureGradKernelCubeLinearMipmapLinear     (const TextureKernelParams p) { TextureGradKernelTemplate<true,  false, TEX_MODE_LINEAR_MIPMAP_LINEAR>(p); }
+ __global__ void TextureGradKernelLinearMipmapNearestBO      (const TextureKernelParams p) { TextureGradKernelTemplate<false, true,  TEX_MODE_LINEAR_MIPMAP_NEAREST>(p); }
+diff --git a/nvdiffrast/common/texture.h b/nvdiffrast/common/texture.h
+index f79b600..bbe779e 100644
+--- a/nvdiffrast/common/texture.h
++++ b/nvdiffrast/common/texture.h
+@@ -24,9 +24,10 @@
+ #define TEX_MAX_MIP_LEVEL                       16  // Currently a texture cannot be larger than 2 GB because we use 32-bit indices everywhere.
+ #define TEX_MODE_NEAREST                        0   // Nearest on base level.
+ #define TEX_MODE_LINEAR                         1   // Bilinear on base level.
+-#define TEX_MODE_LINEAR_MIPMAP_NEAREST          2   // Bilinear on nearest mip level.
+-#define TEX_MODE_LINEAR_MIPMAP_LINEAR           3   // Trilinear.
+-#define TEX_MODE_COUNT                          4
++#define TEX_MODE_LINEAR_GP                      2   // Gaussian Preserving Bilinear on base level
++#define TEX_MODE_LINEAR_MIPMAP_NEAREST          3   // Bilinear on nearest mip level.
++#define TEX_MODE_LINEAR_MIPMAP_LINEAR           4   // Trilinear.
++#define TEX_MODE_COUNT                          5
+ #define TEX_BOUNDARY_MODE_CUBE                  0   // Cube map mode.
+ #define TEX_BOUNDARY_MODE_WRAP                  1   // Wrap (u, v).
+ #define TEX_BOUNDARY_MODE_CLAMP                 2   // Clamp (u, v).
+diff --git a/nvdiffrast/tensorflow/tf_texture.cu b/nvdiffrast/tensorflow/tf_texture.cu
+index c5382fe..33496ee 100644
+--- a/nvdiffrast/tensorflow/tf_texture.cu
++++ b/nvdiffrast/tensorflow/tf_texture.cu
+@@ -212,6 +212,9 @@ struct TextureFwdOp : public OpKernel
+             (void*)TextureFwdKernelLinear1,
+             (void*)TextureFwdKernelLinear2,
+             (void*)TextureFwdKernelLinear4,
++            (void*)TextureFwdKernelLinearGP1,
++            (void*)TextureFwdKernelLinearGP2,
++            (void*)TextureFwdKernelLinearGP4,
+             (void*)TextureFwdKernelLinearMipmapNearest1,
+             (void*)TextureFwdKernelLinearMipmapNearest2,
+             (void*)TextureFwdKernelLinearMipmapNearest4,
+@@ -224,6 +227,9 @@ struct TextureFwdOp : public OpKernel
+             (void*)TextureFwdKernelCubeLinear1,
+             (void*)TextureFwdKernelCubeLinear2,
+             (void*)TextureFwdKernelCubeLinear4,
++            (void*)TextureFwdKernelCubeLinearGP1,
++            (void*)TextureFwdKernelCubeLinearGP2,
++            (void*)TextureFwdKernelCubeLinearGP4,
+             (void*)TextureFwdKernelCubeLinearMipmapNearest1,
+             (void*)TextureFwdKernelCubeLinearMipmapNearest2,
+             (void*)TextureFwdKernelCubeLinearMipmapNearest4,
+@@ -446,10 +452,12 @@ struct TextureGradOp : public OpKernel
+         void* func_tbl[TEX_MODE_COUNT * 2] = {
+             (void*)TextureGradKernelNearest,
+             (void*)TextureGradKernelLinear,
++            (void*)TextureGradKernelLinearGP,
+             (void*)TextureGradKernelLinearMipmapNearest,
+             (void*)TextureGradKernelLinearMipmapLinear,
+             (void*)TextureGradKernelCubeNearest,
+             (void*)TextureGradKernelCubeLinear,
++            (void*)TextureGradKernelCubeLinearGP,
+             (void*)TextureGradKernelCubeLinearMipmapNearest,
+             (void*)TextureGradKernelCubeLinearMipmapLinear,
+         };
+diff --git a/nvdiffrast/torch/ops.py b/nvdiffrast/torch/ops.py
+index ebe770b..028428a 100644
+--- a/nvdiffrast/torch/ops.py
++++ b/nvdiffrast/torch/ops.py
+@@ -510,7 +510,7 @@ class _texture_func(torch.autograd.Function):
+     def backward(ctx, dy):
+         tex, uv = ctx.saved_tensors
+         filter_mode, filter_mode_enum, boundary_mode_enum = ctx.saved_misc
+-        if filter_mode == 'linear':
++        if (filter_mode == 'linear') or (filter_mode == 'linear-gp'):
+             g_tex, g_uv = _get_plugin().texture_grad_linear(tex, uv, dy, filter_mode_enum, boundary_mode_enum)
+             return None, g_tex, g_uv, None, None
+         else: # nearest
+@@ -588,7 +588,7 @@ def texture(tex, uv, uv_da=None, mip_level_bias=None, mip=None, filter_mode='aut
+         filter_mode = 'linear'
+ 
+     # Convert filter mode to internal enumeration.
+-    filter_mode_dict = {'nearest': 0, 'linear': 1, 'linear-mipmap-nearest': 2, 'linear-mipmap-linear': 3}
++    filter_mode_dict = {'nearest': 0, 'linear': 1, 'linear-gp':2, 'linear-mipmap-nearest': 3, 'linear-mipmap-linear': 4}
+     filter_mode_enum = filter_mode_dict[filter_mode]
+ 
+     # Convert boundary mode to internal enumeration.
+diff --git a/nvdiffrast/torch/torch_texture.cpp b/nvdiffrast/torch/torch_texture.cpp
+index 2257f56..2f67428 100644
+--- a/nvdiffrast/torch/torch_texture.cpp
++++ b/nvdiffrast/torch/torch_texture.cpp
+@@ -24,6 +24,9 @@ void TextureFwdKernelNearest4                   (const TextureKernelParams p);
+ void TextureFwdKernelLinear1                    (const TextureKernelParams p);
+ void TextureFwdKernelLinear2                    (const TextureKernelParams p);
+ void TextureFwdKernelLinear4                    (const TextureKernelParams p);
++void TextureFwdKernelLinearGP1                  (const TextureKernelParams p);
++void TextureFwdKernelLinearGP2                  (const TextureKernelParams p);
++void TextureFwdKernelLinearGP4                  (const TextureKernelParams p);
+ void TextureFwdKernelLinearMipmapNearest1       (const TextureKernelParams p);
+ void TextureFwdKernelLinearMipmapNearest2       (const TextureKernelParams p);
+ void TextureFwdKernelLinearMipmapNearest4       (const TextureKernelParams p);
+@@ -36,6 +39,9 @@ void TextureFwdKernelCubeNearest4               (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinear1                (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinear2                (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinear4                (const TextureKernelParams p);
++void TextureFwdKernelCubeLinearGP1              (const TextureKernelParams p);
++void TextureFwdKernelCubeLinearGP2              (const TextureKernelParams p);
++void TextureFwdKernelCubeLinearGP4              (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinearMipmapNearest1   (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinearMipmapNearest2   (const TextureKernelParams p);
+ void TextureFwdKernelCubeLinearMipmapNearest4   (const TextureKernelParams p);
+@@ -59,10 +65,12 @@ void MipGradKernel2                             (const TextureKernelParams p);
+ void MipGradKernel4                             (const TextureKernelParams p);
+ void TextureGradKernelNearest                   (const TextureKernelParams p);
+ void TextureGradKernelLinear                    (const TextureKernelParams p);
++void TextureGradKernelLinearGP                  (const TextureKernelParams p);
+ void TextureGradKernelLinearMipmapNearest       (const TextureKernelParams p);
+ void TextureGradKernelLinearMipmapLinear        (const TextureKernelParams p);
+ void TextureGradKernelCubeNearest               (const TextureKernelParams p);
+ void TextureGradKernelCubeLinear                (const TextureKernelParams p);
++void TextureGradKernelCubeLinearGP              (const TextureKernelParams p);
+ void TextureGradKernelCubeLinearMipmapNearest   (const TextureKernelParams p);
+ void TextureGradKernelCubeLinearMipmapLinear    (const TextureKernelParams p);
+ void TextureGradKernelLinearMipmapNearestBO     (const TextureKernelParams p);
+@@ -348,6 +356,9 @@ torch::Tensor texture_fwd_mip(torch::Tensor tex, torch::Tensor uv, torch::Tensor
+         (void*)TextureFwdKernelLinear1,
+         (void*)TextureFwdKernelLinear2,
+         (void*)TextureFwdKernelLinear4,
++        (void*)TextureFwdKernelLinearGP1,
++        (void*)TextureFwdKernelLinearGP2,
++        (void*)TextureFwdKernelLinearGP4,
+         (void*)TextureFwdKernelLinearMipmapNearest1,
+         (void*)TextureFwdKernelLinearMipmapNearest2,
+         (void*)TextureFwdKernelLinearMipmapNearest4,
+@@ -360,16 +371,22 @@ torch::Tensor texture_fwd_mip(torch::Tensor tex, torch::Tensor uv, torch::Tensor
+         (void*)TextureFwdKernelCubeLinear1,
+         (void*)TextureFwdKernelCubeLinear2,
+         (void*)TextureFwdKernelCubeLinear4,
++        (void*)TextureFwdKernelCubeLinearGP1,
++        (void*)TextureFwdKernelCubeLinearGP2,
++        (void*)TextureFwdKernelCubeLinearGP4,
+         (void*)TextureFwdKernelCubeLinearMipmapNearest1,
+         (void*)TextureFwdKernelCubeLinearMipmapNearest2,
+         (void*)TextureFwdKernelCubeLinearMipmapNearest4,
+         (void*)TextureFwdKernelCubeLinearMipmapLinear1,
+         (void*)TextureFwdKernelCubeLinearMipmapLinear2,
+         (void*)TextureFwdKernelCubeLinearMipmapLinear4,
++        NULL, //nearestBO 1,2,4
+         NULL,
+         NULL,
++        NULL, //linearBO 1,2,4
+         NULL,
+         NULL,
++        NULL, //linearGPBO 1,2,4
+         NULL,
+         NULL,
+         (void*)TextureFwdKernelLinearMipmapNearestBO1,
+@@ -378,10 +395,13 @@ torch::Tensor texture_fwd_mip(torch::Tensor tex, torch::Tensor uv, torch::Tensor
+         (void*)TextureFwdKernelLinearMipmapLinearBO1,
+         (void*)TextureFwdKernelLinearMipmapLinearBO2,
+         (void*)TextureFwdKernelLinearMipmapLinearBO4,
++        NULL, //cubenearestBO 1,2,4
+         NULL,
+         NULL,
++        NULL, //cubelinearBO 1,2,4
+         NULL,
+         NULL,
++        NULL, //cubelinearGPBO 1,2,4
+         NULL,
+         NULL,
+         (void*)TextureFwdKernelCubeLinearMipmapNearestBO1,
+@@ -649,18 +669,22 @@ std::tuple<torch::Tensor, torch::Tensor, torch::Tensor, torch::Tensor, std::vect
+     void* func_tbl[TEX_MODE_COUNT * 2 * 2] = {
+         (void*)TextureGradKernelNearest,
+         (void*)TextureGradKernelLinear,
++        (void*)TextureGradKernelLinearGP,
+         (void*)TextureGradKernelLinearMipmapNearest,
+         (void*)TextureGradKernelLinearMipmapLinear,
+         (void*)TextureGradKernelCubeNearest,
+         (void*)TextureGradKernelCubeLinear,
++        (void*)TextureGradKernelCubeLinearGP,        
+         (void*)TextureGradKernelCubeLinearMipmapNearest,
+         (void*)TextureGradKernelCubeLinearMipmapLinear,
+-        NULL,
+-        NULL,
++        NULL, //nearestBO
++        NULL, //linearBO
++        NULL, //linearGPBO
+         (void*)TextureGradKernelLinearMipmapNearestBO,
+         (void*)TextureGradKernelLinearMipmapLinearBO,
+-        NULL,
+-        NULL,
++        NULL, //Cube nearest BO
++        NULL, //Cube linear BO
++        NULL, //Cube lunear GP BO
+         (void*)TextureGradKernelCubeLinearMipmapNearestBO,
+         (void*)TextureGradKernelCubeLinearMipmapLinearBO,
+     };
