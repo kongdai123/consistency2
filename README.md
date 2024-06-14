@@ -1,6 +1,6 @@
 # Consistency<sup>2</sup>: Consistent and Fast 3D Painting with Latent Consistency Models
 
-This repository complements our CVPR 2024 [AI for 3D Generation](https://ai3dg.github.io/) Workshop Paper titled "Consistency<sup>2</sup>: Consistent and Fast 3D Painting with Latent Consistency Models" by [Tianfu Wang](https://https://tianfwang.github.io/), 
+This repository complements our CVPR 2024 [AI for 3D Generation](https://ai3dg.github.io/) Workshop Paper titled "Consistency<sup>2</sup>: Consistent and Fast 3D Painting with Latent Consistency Models" by [Tianfu Wang](https://tianfwang.github.io/), 
 [Anton Obukhov](https://www.obukhov.ai/).
 and [Konrad Schindler](https://igp.ethz.ch/personen/person-detail.html?persid=143986),
 
